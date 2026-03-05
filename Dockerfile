@@ -23,7 +23,7 @@ RUN mkdir -p /app/mikrotik_archive
 
 # Set default environment variables (can be overridden at runtime)
 ENV OUTPUT_DIR=/app/mikrotik_archive \
-    START_VERSION=3.30 \
+    START_VERSION=3.31.1 \
     END_VERSION=7.50 \
     TEST_WORKERS=16 \
     DL_WORKERS=8 \
@@ -35,4 +35,4 @@ VOLUME ["/app/mikrotik_archive"]
 # Default to CLI mode with full scan
 # Override with docker run ... python run.py --help for usage
 ENTRYPOINT ["python", "run.py"]
-CMD ["--cli", "--output", "/app/mikrotik_archive", "--start", "3.30", "--end", "7.50", "--test-workers", "16", "--dl-workers", "8"]
+CMD ["--cli", "--output", "/app/mikrotik_archive", "--start", "3.31.1", "--end", "7.50", "--test-workers", "16", "--dl-workers", "8"]
