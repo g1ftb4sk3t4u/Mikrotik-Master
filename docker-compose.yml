@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  mikrotik-scraper:
+    build: .
+    container_name: mikrotik-scraper
+    restart: unless-stopped
+    volumes:
+      # Persistent storage for downloaded files and JSON state
+      - ./mikrotik_archive:/app/mikrotik_archive
+    environment:
+      # Customize scan range
+      - START_VERSION=3.30
+      - END_VERSION=7.50
+      # Worker configuration (increase for faster scanning)
+      - TEST_WORKERS=16
+      - DL_WORKERS=8
+      - MAX_RETRIES=3
+    # Default: run full scan once
+    command: ["--cli", "--output", "/app/mikrotik_archive", "--start", "3.30", "--end", "7.50", "--test-workers", "16", "--dl-workers", "8"]
+    
+    # Uncomment below to run in daemon mode (continuously polls RSS for new versions)
+    # command: ["--cli", "--output", "/app/mikrotik_archive", "--start", "7.0", "--end", "7.50", "--test-workers", "8", "--dl-workers", "4"]
+    
+  # Example: Recent versions only (7.x)
+  # mikrotik-scraper-recent:
+  #   build: .
+  #   container_name: mikrotik-scraper-recent
+  #   volumes:
+  #     - ./mikrotik_archive_recent:/app/mikrotik_archive
+  #   command: ["--cli", "--output", "/app/mikrotik_archive", "--start", "7.0", "--end", "7.50", "--test-workers", "32", "--dl-workers", "12"]

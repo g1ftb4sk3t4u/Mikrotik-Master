@@ -15,7 +15,23 @@ Complete MikroTik RouterOS CDN scraper with GUI, daemon mode, and full automatio
 
 ## Installation
 
-### Requirements
+### Docker (Recommended for production/scheduled scans)
+
+See [DOCKER_README.md](DOCKER_README.md) for full Docker documentation.
+
+**Quick start:**
+```bash
+# Build and run
+docker-compose up
+
+# Or with Docker directly
+docker build -t mikrotik-scraper .
+docker run -v $(pwd)/mikrotik_archive:/app/mikrotik_archive mikrotik-scraper
+```
+
+### Local Python Installation
+
+#### Requirements
 - Python 3.8+
 - `requests` library
 

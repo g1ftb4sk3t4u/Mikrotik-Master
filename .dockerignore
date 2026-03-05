@@ -1,0 +1,44 @@
+# Exclude Python cache and virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Exclude virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Exclude downloaded archives (will be mounted as volume)
+mikrotik_archive/
+test_output/
+
+# Exclude logs
+*.log
+
+# Exclude Git
+.git/
+.gitignore
+.gitattributes
+
+# Exclude IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Exclude Docker files (not needed in image)
+docker-compose.yml
+.dockerignore
+
+# Exclude documentation that's not needed in container
+README.md
+DOCKER_README.md
+*.md
