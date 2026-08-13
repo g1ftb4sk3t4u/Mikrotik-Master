@@ -1,29 +1,19 @@
 services:
-  mikrotik-scraper:
+  # One-off historical backfill. Run manually: docker compose run --rm mikrotik-fullscan
+  mikrotik-fullscan:
     build: .
-    container_name: mikrotik-scraper
-    restart: unless-stopped
+    container_name: mikrotik-fullscan
     volumes:
-      # Persistent storage for downloaded files and JSON state
       - ./mikrotik_archive:/app/mikrotik_archive
-    environment:
-      # Customize scan range
-      - START_VERSION=3.31.1
-      - END_VERSION=7.50
-      # Worker configuration (increase for faster scanning)
-      - TEST_WORKERS=16
-      - DL_WORKERS=8
-      - MAX_RETRIES=3
-    # Default: run full scan once (change start/end here for your desired range)
-    command: ["--cli", "--output", "/app/mikrotik_archive", "--start", "3.31.1", "--end", "7.50", "--test-workers", "16", "--dl-workers", "8"]
-    
-    # Uncomment below to run in daemon mode (continuously polls RSS for new versions)
-    # command: ["--cli", "--output", "/app/mikrotik_archive", "--start", "7.0", "--end", "7.50", "--test-workers", "8", "--dl-workers", "4"]
-    
-  # Example: Recent versions only (7.x)
-  # mikrotik-scraper-recent:
-  #   build: .
-  #   container_name: mikrotik-scraper-recent
-  #   volumes:
-  #     - ./mikrotik_archive_recent:/app/mikrotik_archive
-  #   command: ["--cli", "--output", "/app/mikrotik_archive", "--start", "7.0", "--end", "7.50", "--test-workers", "32", "--dl-workers", "12"]
+    command: ["scan", "--output", "/app/mikrotik_archive", "--start", "3.30", "--end", "7.99", "--test-workers", "24", "--dl-workers", "10"]
+
+  # Daily check for new releases. Runs once per container start; pair with a
+  # host cron/systemd timer, or set `restart: unless-stopped` and swap the
+  # command to `["watch", "--interval-hours", "24", "--output", "/app/mikrotik_archive"]`
+  # to keep it running continuously instead.
+  mikrotik-watch:
+    build: .
+    container_name: mikrotik-watch
+    volumes:
+      - ./mikrotik_archive:/app/mikrotik_archive
+    command: ["watch", "--once", "--output", "/app/mikrotik_archive"]

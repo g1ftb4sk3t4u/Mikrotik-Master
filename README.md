@@ -1,194 +1,154 @@
-# MikroTik Master Scraper
+# MikroTik CDN Grabber
 
-Complete MikroTik RouterOS CDN scraper with GUI, daemon mode, and full automation.
+Mirrors the MikroTik RouterOS CDN (`download.mikrotik.com`) locally: every
+architecture's core package, the combined `all_packages` bundle, CHR cloud
+images, netinstall tooling, and installer ISOs, for every version it can
+find - old and current - plus a daily check for new releases so the archive
+stays current on its own.
 
-## Features
+One codebase, three ways to run it:
+- **GUI** - desktop app for interactive use (Windows or Linux desktop)
+- **Headless CLI** - `scan` / `watch` subcommands for servers, cron, systemd, Docker
+- Runs natively on **Windows** (standalone `.exe` + Task Scheduler) and
+  **CentOS** (systemd service + timer), Docker optional on either.
 
-- **Full CDN Crawl**: Discovers and downloads all RouterOS versions from the MikroTik CDN (3.30 to current)
-- **Multi-Architecture Support**: Downloads for arm, arm64, mipsbe, mmips, ppc, smips, tile, x86
-- **GUI Mode**: Beautiful tkinter interface with live progress, stats, and logging
-- **CLI/Daemon Mode**: Can be run as a background daemon for continuous updates
-- **RSS Polling**: Automatically checks MikroTik RSS feed for new releases every 15 minutes
-- **Persistence**: Saves found versions and stats to JSON for resume and tracking
-- **Retry Logic**: Exponential backoff retry on download failures
-- **Thread-Safe**: Concurrent version checking and downloads with configurable workers
+## Why not just guess every version.rc.beta combination?
 
-## Installation
+The CDN has no browsable directory index (`GET` on a bare directory 403s),
+and per-version folders 404 if the version doesn't exist. The reliable,
+cheap signal is `HEAD .../<version>/CHANGELOG` - every real release has one,
+so 200 means "exists", 404 means "doesn't". This tool uses that as the sole
+existence probe, and only expands into rc/beta candidates when you pass
+`--include-prerelease` - the earlier version of this tool multiplied every
+patch into 5 rc + 5 beta variants by default (221 candidates per minor
+version, nearly all dead ends). It also queries MikroTik's own lightweight
+"what's current" endpoints (the stable/long-term RSS feed and the
+`upgrade.mikrotik.com/routeros/LATEST.<channel>` pointer files) first, so
+watch checks never need to brute-force anything at all.
 
-### Docker (Recommended for production/scheduled scans)
-
-See [DOCKER_README.md](DOCKER_README.md) for full Docker documentation.
-
-**Quick start:**
-```bash
-# Build and run
-docker-compose up
-
-# Or with Docker directly
-docker build -t mikrotik-scraper .
-docker run -v $(pwd)/mikrotik_archive:/app/mikrotik_archive mikrotik-scraper
-```
-
-### Local Python Installation
-
-#### Requirements
-- Python 3.8+
-- `requests` library
-
-### Setup
+## Install
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt          # headless (CLI: scan/watch)
+pip install -r requirements-gui.txt      # + GUI (adds sv_ttk for a modern look)
 ```
 
 ## Usage
 
-### GUI Mode (Recommended for interactive use)
+```bash
+# GUI (default with no subcommand)
+python run.py
+python run.py gui
+
+# One-time historical crawl
+python run.py scan --output ./mikrotik_archive --start 3.30 --end 7.99
+
+# Recent versions only, faster
+python run.py scan --output ./mikrotik_archive --start 7.0 --end 7.99
+
+# Single daily-style check for new releases (cron/systemd friendly)
+python run.py watch --once --output ./mikrotik_archive
+
+# Or run the watch loop forever, checking every 24h
+python run.py watch --interval-hours 24 --output ./mikrotik_archive
+
+# Include release candidates / betas in a scan
+python run.py scan --include-prerelease --output ./mikrotik_archive --start 7.15 --end 7.99
+
+# Restrict architectures or file categories
+python run.py scan --archs x86,arm64 --categories npk,all_packages,changelog
+```
+
+Run `python run.py --help` / `python run.py scan --help` / `python run.py watch --help`
+for every flag.
+
+## Deployment
+
+### Windows - standalone .exe + daily scheduled task
+
+```powershell
+.\deploy\windows\build_exe.ps1              # -> dist\mikrotik-grabber.exe
+.\deploy\windows\install_daily_task.ps1 -ArchiveDir "D:\mikrotik_archive" -Time "03:00"
+```
+
+The exe with no arguments opens the GUI; from a terminal, `mikrotik-grabber.exe scan ...`
+/ `watch ...` behave exactly like `python run.py ...`. The install script
+registers a Task Scheduler job that runs `watch --once` daily so new
+releases download automatically without the GUI open.
+
+### CentOS - native systemd service, no Docker required
 
 ```bash
-python mikrotik_master.py
+sudo ./deploy/centos/install.sh
 ```
 
-This launches the GUI where you can:
-- Set output directory and version range (default: 3.30 to 7.50)
-- Configure worker threads for parallel downloads
-- Start a full scan to discover and download all versions
-- Toggle RSS daemon mode to auto-download new releases
-- View real-time logs and download statistics
-- Save logs to file
+Installs to `/opt/mikrotik-grabber` under a dedicated `mikrotik-grabber`
+system user, and enables `mikrotik-grabber-watch.timer` (daily at 03:00,
+randomized by up to 15 min). Run the one-time historical backfill by hand
+afterwards:
 
-### Headless/Script Mode
-
-For automation without GUI, create a script:
-
-```python
-from mikrotik_master import MasterEngine
-
-# Initialize engine
-engine = MasterEngine(
-    output_dir='/path/to/archive',
-    download_workers=8,
-    max_retries=3
-)
-
-# Full scan and download
-engine.scan_versions_range_and_download(
-    start_version='3.30',
-    end_version='7.50',
-    test_workers=16
-)
+```bash
+sudo systemctl start mikrotik-grabber-fullscan.service
+sudo journalctl -u mikrotik-grabber-fullscan.service -f
 ```
 
-Or check for RSS updates only:
+### Docker (either OS)
 
-```python
-new_versions = engine.scan_rss_for_versions()
-for v in new_versions:
-    engine.process_version(v)
-    engine.save_found_versions()
+```bash
+docker compose run --rm mikrotik-fullscan   # one-time historical crawl
+docker compose run --rm mikrotik-watch      # one daily-style check
 ```
 
-## Architecture
+Pair `mikrotik-watch` with a host cron job or systemd timer for daily runs,
+or edit its `command:` in `docker-compose.yml` to use `watch --interval-hours 24`
+and `restart: unless-stopped` to keep the container running continuously instead.
 
-### MasterEngine
-Core scraper engine handling:
-- Version number generation (major.minor.patch combinations)
-- CDN availability checks (HEAD requests)
-- Parallel file downloads with retry logic
-- Persistence (JSON: `found_versions.json`, `download_stats.json`)
+## Archive layout
 
-### MasterGUI
-Tkinter interface providing:
-- Configuration panel (output dir, version range, worker counts)
-- Live statistics display
-- Colored log viewer
-- RSS daemon toggle
-- Stop/pause capability
-
-### Daemon Mode
-Runs continuously checking RSS feed and downloading new versions:
-- Polls RSS every 15 minutes (configurable)
-- Downloads new versions automatically
-- Persists found versions and stats
-- Runs independently from GUI (can leave running)
-
-## File Organization
-
-Downloaded files are organized as:
 ```
 mikrotik_archive/
-├── 7.10/
-│   ├── arm/
-│   │   ├── routeros-arm-7.10.npk
-│   │   ├── all_packages-arm-7.10.zip
-│   │   └── ...
-│   ├── arm64/
+├── manifest.json          # discovered versions, downloaded files (size/path), running stats
+├── 7.16/
 │   ├── x86/
-│   └── CHANGELOG, README (in version root)
-├── 7.11/
-├── found_versions.json
-├── download_stats.json
+│   │   ├── routeros-7.16.npk         # v7 core package; x86 drops the arch suffix, other archs get routeros-7.16-<arch>.npk
+│   │   └── all_packages-x86-7.16.zip
+│   ├── arm64/...
+│   ├── CHANGELOG
+│   └── chr-7.16.img.zip
+├── 6.49.20/
+│   ├── x86/
+│   │   ├── routeros-x86-6.49.20.npk  # v6 branch uses the opposite filename order
+│   │   └── all_packages-x86-6.49.20.zip
+│   └── ...
 └── ...
 ```
 
-## Configuration Options
+`manifest.json` replaces the old `found_versions.json` + `download_stats.json`
+pair, is written atomically (temp file + rename, so a crash mid-write can't
+corrupt it), and doubles as the resume/skip-if-already-downloaded record.
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| Output Directory | `./mikrotik_archive` | Where files are saved |
-| Start Version | 3.30 | Earliest version to scan |
-| End Version | 7.50 | Latest version to scan |
-| Test Workers | 16 | Threads for version checking |
-| Download Workers | 8 | Threads for file downloads |
-| Max Retries | 3 | Retry attempts per failed file |
+Every filename template in `catalog.py` was verified live against the CDN
+rather than assumed - MikroTik isn't consistent about naming across major
+branches (see the comment at the top of `FILE_CATEGORIES`), and a couple of
+categories that turned out not to exist anywhere on the CDN (a per-version
+"netinstall-6" variant, a bare CHR "raw" image, a separate `README` file)
+were dropped rather than left in to silently 404 forever.
 
-## Performance Tips
+## A note on "devices"
 
-- **Test Workers**: Increase to 20-32 for faster initial scan (discovers all versions)
-- **Download Workers**: Keep at 8-12 to avoid overwhelming the server
-- **Version Range**: Narrow the range if you only need recent versions (e.g., 7.0 to 7.50)
+MikroTik doesn't publish separate per-router-model firmware downloads on
+this CDN - RouterBOARD firmware ships bundled inside the RouterOS install
+packages themselves (that's how the core npk package covers every device
+using that architecture). There's no separate device tree to crawl.
 
-## Output
+## Disk space
 
-- **Logs**: Real-time display in GUI or console; saveable to `.txt`
-- **Persistence**: 
-  - `found_versions.json`: All discovered versions
-  - `download_stats.json`: Download count, skipped, failed, bytes
-- **Downloaded Files**: Organized by version and architecture
-
-## Examples
-
-### Download only recent versions (faster)
-Set Start Version: `7.0`, End Version: `7.50`
-
-### Run daemon indefinitely
-Start GUI, toggle "Start Daemon (RSS)", leave window open
-
-### Scripted full crawl with progress
-```python
-from mikrotik_master import MasterEngine, MasterGUI
-import tkinter as tk
-
-root = tk.Tk()
-gui = MasterGUI(root)
-# GUI handles threading and updates automatically
-root.mainloop()
-```
-
-## Troubleshooting
-
-**No versions found**: Check network access to `https://download.mikrotik.com/routeros`
-
-**Slow downloads**: Reduce `Download Workers` if getting connection resets; increase `Test Workers` if version scan is slow
-
-**Daemon not finding new versions**: Ensure RSS URL is accessible and version format matches regex in `scan_rss_for_versions()`
-
-**Out of disk space**: Downloads can be 100GB+; check available space before starting large scans
+A full historical crawl across all architectures/categories is easily
+500GB-1TB+ (roughly 300 real historical versions × up to 8 architectures ×
+several formats each, including multiple CHR virtual-disk variants).
+Narrow `--start`/`--end`, `--archs`, or `--categories` if you only need
+recent x86/arm64 builds, for example.
 
 ## License
 
 MIT
-
-## Author
-
-Generated by Claude (merged from two earlier implementations)

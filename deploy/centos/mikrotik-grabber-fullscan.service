@@ -1,0 +1,16 @@
+[Unit]
+Description=MikroTik CDN Grabber - one-off full historical crawl (run manually: systemctl start mikrotik-grabber-fullscan)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=mikrotik-grabber
+Group=mikrotik-grabber
+WorkingDirectory=/opt/mikrotik-grabber
+Environment=ARCHIVE_DIR=/data/mikrotik_archive
+ExecStart=/opt/mikrotik-grabber/venv/bin/python /opt/mikrotik-grabber/run.py scan --output ${ARCHIVE_DIR} --start 3.30 --end 7.99 --test-workers 24 --dl-workers 10
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=0

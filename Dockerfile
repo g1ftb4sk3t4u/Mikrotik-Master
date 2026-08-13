@@ -15,24 +15,18 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY mikrotik_master.py .
+COPY mikrotik_grabber ./mikrotik_grabber
 COPY run.py .
 
 # Create output directory for downloads
 RUN mkdir -p /app/mikrotik_archive
 
-# Set default environment variables (can be overridden at runtime)
-ENV OUTPUT_DIR=/app/mikrotik_archive \
-    START_VERSION=3.31.1 \
-    END_VERSION=7.50 \
-    TEST_WORKERS=16 \
-    DL_WORKERS=8 \
-    MAX_RETRIES=3
-
-# Expose volume for persistent downloads and JSON state
+# Expose volume for persistent downloads and manifest.json
 VOLUME ["/app/mikrotik_archive"]
 
-# Default to CLI mode with full scan
-# Override with docker run ... python run.py --help for usage
+# Headless only - the GUI subcommand needs tkinter/a display, which this
+# slim image intentionally doesn't have. Default: one watch check per run,
+# suited to being invoked on a schedule (see docker-compose.yml / cron).
+# Override with docker run ... python run.py --help for the full command set.
 ENTRYPOINT ["python", "run.py"]
-CMD ["--cli", "--output", "/app/mikrotik_archive", "--start", "3.31.1", "--end", "7.50", "--test-workers", "16", "--dl-workers", "8"]
+CMD ["watch", "--once", "--output", "/app/mikrotik_archive"]

@@ -1,0 +1,15 @@
+[Unit]
+Description=MikroTik CDN Grabber - daily check for new RouterOS releases
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=mikrotik-grabber
+Group=mikrotik-grabber
+WorkingDirectory=/opt/mikrotik-grabber
+Environment=ARCHIVE_DIR=/data/mikrotik_archive
+ExecStart=/opt/mikrotik-grabber/venv/bin/python /opt/mikrotik-grabber/run.py watch --once --output ${ARCHIVE_DIR}
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

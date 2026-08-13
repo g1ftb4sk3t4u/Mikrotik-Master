@@ -1,0 +1,4 @@
+# Optional: only needed to run the desktop GUI (`gui`/no-arg mode).
+# Headless deployments (CentOS scan/watch) don't need this or tkinter.
+-r requirements.txt
+sv_ttk>=2.6.0
