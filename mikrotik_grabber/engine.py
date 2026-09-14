@@ -2,8 +2,6 @@
 CLI and GUI front ends can render them however they like.
 """
 
-from __future__ import annotations
-
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path

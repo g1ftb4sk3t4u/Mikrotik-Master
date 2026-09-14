@@ -3,8 +3,6 @@ subcommand is fully headless and safe to run under systemd / Task Scheduler /
 Docker with no display available.
 """
 
-from __future__ import annotations
-
 import argparse
 import sys
 

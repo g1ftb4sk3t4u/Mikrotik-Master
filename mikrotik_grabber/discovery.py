@@ -1,7 +1,5 @@
 """Version discovery: cheap authoritative sources first, bounded brute force to fill gaps."""
 
-from __future__ import annotations
-
 import re
 import xml.etree.ElementTree as ET
 from urllib.parse import parse_qs, urlparse

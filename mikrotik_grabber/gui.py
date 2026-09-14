@@ -3,8 +3,6 @@ thread and pushes events onto a queue; this module only ever touches
 tkinter widgets from the main thread via root.after polling.
 """
 
-from __future__ import annotations
-
 import queue
 import threading
 from datetime import datetime

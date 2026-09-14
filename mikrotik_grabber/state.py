@@ -1,7 +1,5 @@
 """Persistent state: which versions/files we've already got, written atomically."""
 
-from __future__ import annotations
-
 import json
 import os
 import threading

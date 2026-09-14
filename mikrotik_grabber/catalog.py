@@ -8,8 +8,6 @@ to: the combined package bundle, the core npk per architecture, CHR cloud
 images, netinstall tooling, the ISO installer, and the changelog/readme.
 """
 
-from __future__ import annotations
-
 BASE_CDN_URL = "https://download.mikrotik.com/routeros"
 
 # Major-branch "latest known" pointer files MikroTik publishes for the
