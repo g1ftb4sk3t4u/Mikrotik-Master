@@ -103,6 +103,25 @@ Pair `mikrotik-watch` with a host cron job or systemd timer for daily runs,
 or edit its `command:` in `docker-compose.yml` to use `watch --interval-hours 24`
 and `restart: unless-stopped` to keep the container running continuously instead.
 
+## Checking files already on disk
+
+Every run checks what's already in the archive before downloading:
+
+- A file the manifest recorded at the same size is trusted as-is.
+- Anything else (copied in by hand, or left by an older version of this
+  tool) is checked once against the CDN's file size. A short file means an
+  interrupted download, so it's fetched again; a matching one is recorded
+  in the manifest and never re-checked.
+- CHANGELOG/ISO/CHR files the older `mikrotik_master.py` / `centos_version`
+  scrapers saved under `<version>/x86/` are recognized there, not
+  downloaded a second time.
+- Downloads are written to `<file>.part` and only renamed once complete,
+  so a crash, kill, or full disk never leaves a truncated file behind.
+
+`watch` re-checks every currently-advertised release each run, not just
+brand-new ones, so a file that failed the night it came out is picked up
+the next night.
+
 ## Archive layout
 
 ```

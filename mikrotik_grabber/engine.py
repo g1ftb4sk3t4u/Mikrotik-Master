@@ -2,6 +2,7 @@
 CLI and GUI front ends can render them however they like.
 """
 
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -31,7 +32,9 @@ class Engine:
         self._stop_flag = stop_flag or (lambda: False)
 
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": DEFAULT_USER_AGENT})
+        # identity (no gzip) so Content-Length is the real on-disk byte count -
+        # the size checks in _download_file/_existing_file compare against it.
+        self.session.headers.update({"User-Agent": DEFAULT_USER_AGENT, "Accept-Encoding": "identity"})
         # Default pool_maxsize is 10; with test_workers/download_workers
         # commonly set well above that, extra threads would silently block
         # waiting for a free pooled connection instead of erroring - not a
@@ -122,15 +125,23 @@ class Engine:
         return sorted(found_versions, key=_version_sort_key)
 
     def watch_once(self):
-        """One check-for-new-versions pass, suitable for a daily scheduled run."""
+        """One check-for-new-versions pass, suitable for a daily scheduled run.
+
+        Every currently-advertised version gets a download pass, not just the
+        ones never seen before - otherwise a file that failed on the night a
+        release came out (network blip, or MikroTik uploading some files a
+        few hours after the rest) would never be retried by the nightly run.
+        Files already on disk cost nothing but a local stat.
+        """
         known = self.discover_known_versions()
         new = [v for v in known if not self.manifest.has_version(v)]
         if not new:
             self.log("No new versions since last check.", "INFO")
-        for v in new:
+        for v in sorted(known, key=_version_sort_key):
             if self._stopped():
                 break
-            self.log(f"New version detected: {v}", "FOUND")
+            if v in new:
+                self.log(f"New version detected: {v}", "FOUND")
             self.manifest.record_version(v)
             self.download_version(v)
         self.manifest.mark_watch_check()
@@ -167,21 +178,65 @@ class Engine:
                 except Exception as e:
                     self.log(f"Unexpected download error: {e}", "ERROR")
 
+    def _existing_file(self, version: str, arch, filename: str, url: str):
+        """Return the path of a complete copy already on disk, or None.
+
+        Also looks in <version>/x86/ for arch-less files (CHANGELOG, ISO,
+        CHR, netinstall): the older mikrotik_master.py / centos_version
+        scrapers saved them there, and an archive built by those shouldn't
+        get every one of them downloaded a second time.
+
+        A file the manifest already recorded at this exact size is trusted
+        as-is. Anything else (copied in by hand, left by an older tool, or
+        cut short by a crash or full disk) is checked once against the CDN's
+        Content-Length; a size mismatch means it's incomplete and gets
+        downloaded again.
+        """
+        candidates = [self.output_dir / version / (arch or "") / filename]
+        if arch is None:
+            candidates.append(self.output_dir / version / "x86" / filename)
+
+        for path in candidates:
+            if not (path.exists() and path.stat().st_size > 0):
+                continue
+            size = path.stat().st_size
+            if self.manifest.has_file(version, filename, expected_size=size):
+                return path
+            remote_size = self._remote_size(url)
+            if remote_size is not None and remote_size != size:
+                self.log(f"Incomplete file on disk, re-downloading: {path.relative_to(self.output_dir)} "
+                         f"({size} of {remote_size} bytes)", "WARNING")
+                continue
+            self.manifest.record_file(version, filename, size, str(path.relative_to(self.output_dir)))
+            return path
+        return None
+
+    def _remote_size(self, url: str):
+        """Content-Length from a HEAD request, or None if it can't be had
+        (in which case the file on disk is given the benefit of the doubt)."""
+        try:
+            resp = self.session.head(url, timeout=15, allow_redirects=True)
+            if resp.status_code == 200 and resp.headers.get("Content-Length"):
+                return int(resp.headers["Content-Length"])
+        except (requests.RequestException, ValueError):
+            pass
+        return None
+
     def _download_file(self, version: str, category: str, arch, filename: str, url: str, retry: int = 0) -> bool:
         subdir = self.output_dir / version / (arch or "")
         out_path = subdir / filename
+        # Downloads land in a .part file and are only renamed into place once
+        # complete, so a kill, crash, or full disk mid-file can never leave a
+        # truncated file under the real name for later runs to skip as "done".
+        part_path = out_path.with_name(filename + ".part")
 
-        if out_path.exists() and out_path.stat().st_size > 0:
-            # A file already on disk is trusted on its own - requiring a
-            # matching manifest entry too would mean pointing this at an
-            # archive built by an older version of this tool (or one with a
-            # deleted/corrupted manifest.json) re-downloads everything it
-            # already has instead of recognizing it. Backfill the manifest
-            # from what's actually there so future runs stay consistent.
-            if not self.manifest.has_file(version, filename):
-                size = out_path.stat().st_size
-                rel_path = str(out_path.relative_to(self.output_dir))
-                self.manifest.record_file(version, filename, size, rel_path)
+        if self._existing_file(version, arch, filename, url) is not None:
+            # leftover from a run that was killed outright (kill -9, reboot)
+            try:
+                if part_path.exists():
+                    part_path.unlink()
+            except OSError:
+                pass
             self._emit("stat", key="files_skipped", amount=1)
             self.manifest.bump_stat("files_skipped")
             return True
@@ -191,10 +246,12 @@ class Engine:
             if resp.status_code == 404:
                 return False
             resp.raise_for_status()
+            expected = resp.headers.get("Content-Length")
+            encoded = resp.headers.get("Content-Encoding", "identity") != "identity"
 
             out_path.parent.mkdir(parents=True, exist_ok=True)
             downloaded = 0
-            with open(out_path, "wb") as f:
+            with open(part_path, "wb") as f:
                 for chunk in resp.iter_content(chunk_size=64 * 1024):
                     if not chunk:
                         continue
@@ -202,6 +259,13 @@ class Engine:
                     downloaded += len(chunk)
                     if self._stopped():
                         break
+
+            if self._stopped():
+                part_path.unlink()
+                return False
+            if expected is not None and not encoded and downloaded != int(expected):
+                raise requests.RequestException(f"incomplete download ({downloaded} of {expected} bytes)")
+            os.replace(str(part_path), str(out_path))
 
             rel_path = str(out_path.relative_to(self.output_dir))
             self.manifest.record_file(version, filename, downloaded, rel_path)
@@ -218,14 +282,19 @@ class Engine:
                 time.sleep(backoff)
                 return self._download_file(version, category, arch, filename, url, retry + 1)
             self.log(f"Failed: {filename}: {e}", "ERROR")
-            self.manifest.bump_stat("files_failed")
-            self._emit("stat", key="files_failed", amount=1)
-            try:
-                if out_path.exists():
-                    out_path.unlink()
-            except OSError:
-                pass
-            return False
+        except OSError as e:
+            # Disk full / permissions - retrying won't help, so fail this file
+            # cleanly instead of leaving a partial file behind.
+            self.log(f"Failed writing {filename}: {e}", "ERROR")
+
+        self.manifest.bump_stat("files_failed")
+        self._emit("stat", key="files_failed", amount=1)
+        try:
+            if part_path.exists():
+                part_path.unlink()
+        except OSError:
+            pass
+        return False
 
 
 def _version_sort_key(version: str):
