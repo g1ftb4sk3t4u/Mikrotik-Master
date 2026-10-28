@@ -114,7 +114,8 @@ Every run checks what's already in the archive before downloading:
   in the manifest and never re-checked.
 - Archives built by the older `mikrotik_master.py` / `centos_version`
   scrapers are recognized as-is, not downloaded a second time:
-  CHANGELOG/ISO/CHR files under `<version>/x86/`, and v7 core packages
+  CHANGELOG/ISO/CHR files under `<version>/x86/`, netinstall under
+  `<version>/utils/`, and v7 core packages
   under the v6-style name `routeros-<arch>-<version>.npk` (the CDN serves
   that as an alias of the same file).
 - Downloads are written to `<file>.part` and only renamed once complete,

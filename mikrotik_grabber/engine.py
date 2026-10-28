@@ -184,7 +184,7 @@ class Engine:
         Also looks where the older mikrotik_master.py / centos_version
         scrapers saved things, so an archive built by those doesn't get
         downloaded a second time: arch-less files (CHANGELOG, ISO, CHR,
-        netinstall) under <version>/x86/, and v7 core packages under the v6
+        netinstall) under <version>/x86/ or <version>/utils/, and v7 core packages under the v6
         naming (routeros-<arch>-<version>.npk), which the CDN also serves as
         an alias of the same file.
 
@@ -197,6 +197,7 @@ class Engine:
         candidates = [self.output_dir / version / (arch or "") / filename]
         if arch is None:
             candidates.append(self.output_dir / version / "x86" / filename)
+            candidates.append(self.output_dir / version / "utils" / filename)
         elif category == "npk":
             candidates.append(self.output_dir / version / arch / f"routeros-{arch}-{version}.npk")
 
