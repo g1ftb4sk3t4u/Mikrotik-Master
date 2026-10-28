@@ -112,9 +112,11 @@ Every run checks what's already in the archive before downloading:
   tool) is checked once against the CDN's file size. A short file means an
   interrupted download, so it's fetched again; a matching one is recorded
   in the manifest and never re-checked.
-- CHANGELOG/ISO/CHR files the older `mikrotik_master.py` / `centos_version`
-  scrapers saved under `<version>/x86/` are recognized there, not
-  downloaded a second time.
+- Archives built by the older `mikrotik_master.py` / `centos_version`
+  scrapers are recognized as-is, not downloaded a second time:
+  CHANGELOG/ISO/CHR files under `<version>/x86/`, and v7 core packages
+  under the v6-style name `routeros-<arch>-<version>.npk` (the CDN serves
+  that as an alias of the same file).
 - Downloads are written to `<file>.part` and only renamed once complete,
   so a crash, kill, or full disk never leaves a truncated file behind.
 

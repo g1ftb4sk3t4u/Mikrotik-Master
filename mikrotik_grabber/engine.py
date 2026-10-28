@@ -178,13 +178,15 @@ class Engine:
                 except Exception as e:
                     self.log(f"Unexpected download error: {e}", "ERROR")
 
-    def _existing_file(self, version: str, arch, filename: str, url: str):
+    def _existing_file(self, version: str, category: str, arch, filename: str, url: str):
         """Return the path of a complete copy already on disk, or None.
 
-        Also looks in <version>/x86/ for arch-less files (CHANGELOG, ISO,
-        CHR, netinstall): the older mikrotik_master.py / centos_version
-        scrapers saved them there, and an archive built by those shouldn't
-        get every one of them downloaded a second time.
+        Also looks where the older mikrotik_master.py / centos_version
+        scrapers saved things, so an archive built by those doesn't get
+        downloaded a second time: arch-less files (CHANGELOG, ISO, CHR,
+        netinstall) under <version>/x86/, and v7 core packages under the v6
+        naming (routeros-<arch>-<version>.npk), which the CDN also serves as
+        an alias of the same file.
 
         A file the manifest already recorded at this exact size is trusted
         as-is. Anything else (copied in by hand, left by an older tool, or
@@ -195,6 +197,8 @@ class Engine:
         candidates = [self.output_dir / version / (arch or "") / filename]
         if arch is None:
             candidates.append(self.output_dir / version / "x86" / filename)
+        elif category == "npk":
+            candidates.append(self.output_dir / version / arch / f"routeros-{arch}-{version}.npk")
 
         for path in candidates:
             if not (path.exists() and path.stat().st_size > 0):
@@ -230,7 +234,7 @@ class Engine:
         # truncated file under the real name for later runs to skip as "done".
         part_path = out_path.with_name(filename + ".part")
 
-        if self._existing_file(version, arch, filename, url) is not None:
+        if self._existing_file(version, category, arch, filename, url) is not None:
             # leftover from a run that was killed outright (kill -9, reboot)
             try:
                 if part_path.exists():
